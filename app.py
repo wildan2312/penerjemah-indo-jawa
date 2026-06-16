@@ -1,3 +1,4 @@
+%%writefile app.py
 import streamlit as st
 import requests
 
@@ -9,7 +10,6 @@ st.write("Aplikasi web NLP menggunakan API Serverless **NLLB-200-Distilled-600M*
 st.markdown("---")
 
 # 2. Mengambil HF_TOKEN dari Fitur Secrets Management Streamlit
-# (Token aman, tidak bocor di kode GitHub publik)
 if "HF_TOKEN" in st.secrets:
     HF_TOKEN = st.secrets["HF_TOKEN"]
 else:
@@ -20,10 +20,18 @@ else:
 API_URL = "https://api-inference.huggingface.co/models/facebook/nllb-200-distilled-600M"
 headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
-# Fungsi untuk menembak API Hugging Face
+# Fungsi untuk menembak API Hugging Face dengan Error Handling Jaringan
 def query_translation(payload):
-    response = requests.post(API_URL, headers=headers, json=payload)
-    return response.json()
+    try:
+        # Ditambahkan timeout=20 agar jika server HF lambat, aplikasi tidak crash menggantung
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=20)
+        return response.json()
+    except requests.exceptions.ConnectionError:
+        return {"error": "Gagal menghubungi server Hugging Face. Terjadi gangguan koneksi internet pada server."}
+    except requests.exceptions.Timeout:
+        return {"error": "Koneksi ke server Hugging Face terlalu lama (Timeout). Silakan coba lagi."}
+    except Exception as e:
+        return {"error": f"Terjadi kesalahan jaringan tidak terduga: {str(e)}"}
 
 # 3. Komponen Input Teks Antarmuka Web
 teks_input = st.text_area(
@@ -38,7 +46,6 @@ if st.button("Terjemahkan ke Bahasa Jawa ✨", type="primary"):
         st.warning("Silakan masukkan kalimat terlebih dahulu!")
     else:
         with st.spinner("Menghubungi server Hugging Face AI..."):
-            # Struktur payload khusus untuk konfigurasi translasi bahasa NLLB
             payload = {
                 "inputs": teks_input,
                 "parameters": {
@@ -51,15 +58,18 @@ if st.button("Terjemahkan ke Bahasa Jawa ✨", type="primary"):
             output = query_translation(payload)
             
             try:
-                # Format response default API HF: [{"translation_text": "hasil"}]
-                if isinstance(output, list) and "translation_text" in output[0]:
+                # Jika fungsi mengembalikan dict eror dari blok except kita
+                if isinstance(output, dict) and "error" in output:
+                    st.error(output["error"])
+                
+                # Format response sukses default API HF: [{"translation_text": "hasil"}]
+                elif isinstance(output, list) and "translation_text" in output[0]:
                     hasil_terjemahan = output[0]["translation_text"]
-                    
                     st.markdown("### 🎯 Hasil Terjemahan (Bahasa Jawa):")
                     st.info(hasil_terjemahan)
                 
                 # Jika model sedang dalam status "loading/warming up" di server HF
-                elif "estimated_time" in output:
+                elif isinstance(output, dict) and "estimated_time" in output:
                     st.warning(f"Server model sedang bersiap di Hugging Face. Silakan klik tombol kembali dalam {int(output['estimated_time'])} detik.")
                 else:
                     st.error("Terjadi respons tidak terduga dari API.")
