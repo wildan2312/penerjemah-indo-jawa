@@ -1,11 +1,12 @@
 import streamlit as st
-import requests
+import json
+from huggingface_hub import InferenceClient
 
 # 1. Konfigurasi Halaman Web
 st.set_page_config(page_title="Translasi Indo-Jawa NLLB", page_icon="🔄", layout="centered")
 
 st.title("🔄 Aplikasi Penerjemah Bahasa Indonesia ke Bahasa Jawa")
-st.write("Aplikasi web NLP menggunakan API Serverless **NLLB-200-Distilled-600M** dari Meta AI.")
+st.write("Aplikasi web NLP menggunakan API Resmi **Hugging Face Inference Client**.")
 st.markdown("---")
 
 # 2. Mengambil HF_TOKEN dari Fitur Secrets Management Streamlit
@@ -15,36 +16,28 @@ else:
     st.error("Error: Rahasia 'HF_TOKEN' belum dikonfigurasi di pengaturan Streamlit Cloud!")
     st.stop()
 
-# URL API resmi Hugging Face untuk model NLLB-200
-API_URL = "https://api-inference.huggingface.co/models/facebook/nllb-200-distilled-600M"
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+# 3. Inisialisasi Hugging Face Client Resmi (Optimized with Cache)
+@st.cache_resource
+def get_hf_client():
+    # Mengunci ke model NLLB-200 Meta AI
+    return InferenceClient(model="facebook/nllb-200-distilled-600M", token=HF_TOKEN)
 
-# Fungsi untuk menembak API Hugging Face dengan Error Handling Jaringan
-def query_translation(payload):
-    try:
-        # Ditambahkan timeout=20 agar jika server HF lambat, aplikasi tidak crash menggantung
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=20)
-        return response.json()
-    except requests.exceptions.ConnectionError:
-        return {"error": "Gagal menghubungi server Hugging Face. Terjadi gangguan koneksi internet pada server."}
-    except requests.exceptions.Timeout:
-        return {"error": "Koneksi ke server Hugging Face terlalu lama (Timeout). Silakan coba lagi."}
-    except Exception as e:
-        return {"error": f"Terjadi kesalahan jaringan tidak terduga: {str(e)}"}
+client = get_hf_client()
 
-# 3. Komponen Input Teks Antarmuka Web
+# 4. Komponen Input Teks Antarmuka Web
 teks_input = st.text_area(
     "Masukkan Kalimat (Bahasa Indonesia):", 
     placeholder="Ketik di sini... Contoh: namaku wildan, kamu siapa",
     height=150
 )
 
-# 4. Tombol Eksekusi Translasi
+# 5. Tombol Eksekusi Translasi
 if st.button("Terjemahkan ke Bahasa Jawa ✨", type="primary"):
     if teks_input.strip() == "":
         st.warning("Silakan masukkan kalimat terlebih dahulu!")
     else:
-        with st.spinner("Menghubungi server Hugging Face AI..."):
+        with st.spinner("Menghubungi server Hugging Face AI (Menggunakan Jalur Client Resmi)..."):
+            # Payload parameter untuk mengunci bahasa Indonesia ke Jawa
             payload = {
                 "inputs": teks_input,
                 "parameters": {
@@ -53,30 +46,35 @@ if st.button("Terjemahkan ke Bahasa Jawa ✨", type="primary"):
                 }
             }
             
-            # Memanggil fungsi API
-            output = query_translation(payload)
-            
             try:
-                # Jika fungsi mengembalikan dict eror dari blok except kita
-                if isinstance(output, dict) and "error" in output:
-                    st.error(output["error"])
+                # Mengirim request menggunakan fungsi post dari InferenceClient (Lebih stabil & aman)
+                response = client.post(json=payload)
                 
-                # Format response sukses default API HF: [{"translation_text": "hasil"}]
-                elif isinstance(output, list) and "translation_text" in output[0]:
+                # Decode hasil respons dari bentuk bytes ke JSON
+                output = json.loads(response.decode("utf-8"))
+                
+                # Skenario A: Sukses mendapatkan hasil translasi
+                if isinstance(output, list) and "translation_text" in output[0]:
                     hasil_terjemahan = output[0]["translation_text"]
                     st.markdown("### 🎯 Hasil Terjemahan (Bahasa Jawa):")
                     st.info(hasil_terjemahan)
                 
-                # Jika model sedang dalam status "loading/warming up" di server HF
+                # Skenario B: Server Hugging Face sedang bersiap memuat model (Warming Up)
                 elif isinstance(output, dict) and "estimated_time" in output:
-                    st.warning(f"Server model sedang bersiap di Hugging Face. Silakan klik tombol kembali dalam {int(output['estimated_time'])} detik.")
+                    st.warning(f"Server model sedang bersiap di Hugging Face (Warming up). Silakan klik tombol kembali dalam {int(output['estimated_time'])} detik.")
+                
+                # Skenario C: Ada pesan eror spesifik dari Hugging Face (Misal token salah)
+                elif isinstance(output, dict) and "error" in output:
+                    st.error(f"Pesan dari Hugging Face: {output['error']}")
                 else:
-                    st.error("Terjadi respons tidak terduga dari API.")
+                    st.error("Gagal memproses format data.")
                     st.json(output)
                     
             except Exception as e:
-                st.error(f"Gagal memproses hasil translasi. Error: {str(e)}")
-                st.json(output)
+                st.error("Gagal menyambung ke server Hugging Face.")
+                st.info("Tips Pemecahan Masalah:\n"
+                        "1. Server free tier Hugging Face terkadang down selama beberapa menit, silakan coba klik tombol kembali secara berkala.\n"
+                        "2. Pastikan HF_TOKEN yang kamu masukkan di Advanced Settings Streamlit Cloud bernilai benar dan memiliki hak akses 'Read'.")
 
 st.markdown("---")
 st.caption("Proyek Pengembangan Sistem NLP | Dataset Evaluasi: NusaX")
