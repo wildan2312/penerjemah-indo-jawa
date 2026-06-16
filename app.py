@@ -37,7 +37,6 @@ if st.button("Terjemahkan ke Bahasa Jawa ✨", type="primary"):
         st.warning("Silakan masukkan kalimat terlebih dahulu!")
     else:
         with st.spinner("Menghubungi server Hugging Face AI (Menggunakan Jalur Client Resmi)..."):
-            # Payload parameter untuk mengunci bahasa Indonesia ke Jawa
             payload = {
                 "inputs": teks_input,
                 "parameters": {
@@ -47,23 +46,15 @@ if st.button("Terjemahkan ke Bahasa Jawa ✨", type="primary"):
             }
             
             try:
-                # Mengirim request menggunakan fungsi post dari InferenceClient (Lebih stabil & aman)
                 response = client.post(json=payload)
-                
-                # Decode hasil respons dari bentuk bytes ke JSON
                 output = json.loads(response.decode("utf-8"))
                 
-                # Skenario A: Sukses mendapatkan hasil translasi
                 if isinstance(output, list) and "translation_text" in output[0]:
                     hasil_terjemahan = output[0]["translation_text"]
                     st.markdown("### 🎯 Hasil Terjemahan (Bahasa Jawa):")
                     st.info(hasil_terjemahan)
-                
-                # Skenario B: Server Hugging Face sedang bersiap memuat model (Warming Up)
                 elif isinstance(output, dict) and "estimated_time" in output:
-                    st.warning(f"Server model sedang bersiap di Hugging Face (Warming up). Silakan klik tombol kembali dalam {int(output['estimated_time'])} detik.")
-                
-                # Skenario C: Ada pesan eror spesifik dari Hugging Face (Misal token salah)
+                    st.warning(f"Server model sedang bersiap di Hugging Face. Silakan klik tombol kembali dalam {int(output['estimated_time'])} detik.")
                 elif isinstance(output, dict) and "error" in output:
                     st.error(f"Pesan dari Hugging Face: {output['error']}")
                 else:
@@ -71,10 +62,8 @@ if st.button("Terjemahkan ke Bahasa Jawa ✨", type="primary"):
                     st.json(output)
                     
             except Exception as e:
+                # KODE DIUBAH DI SINI: Membongkar detail eror asli ke layar web
                 st.error("Gagal menyambung ke server Hugging Face.")
-                st.info("Tips Pemecahan Masalah:\n"
-                        "1. Server free tier Hugging Face terkadang down selama beberapa menit, silakan coba klik tombol kembali secara berkala.\n"
-                        "2. Pastikan HF_TOKEN yang kamu masukkan di Advanced Settings Streamlit Cloud bernilai benar dan memiliki hak akses 'Read'.")
-
+                st.warning(f"🔧 **Detail Teknis Eror (Tunjukkan ini ke Wildan):** {str(e)}")
 st.markdown("---")
 st.caption("Proyek Pengembangan Sistem NLP | Dataset Evaluasi: NusaX")
